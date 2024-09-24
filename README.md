@@ -25,6 +25,8 @@ fn ls apps
 ## Create or Update your Dynamic Group
 In order to use other OCI Services, your function must be part of a dynamic group. For information on how to create a dynamic group, refer to the [documentation](https://docs.cloud.oracle.com/iaas/Content/Identity/Tasks/managingdynamicgroups.htm#To).
 
+![user input icon](./images/userinput.png)
+
 When specifying the *Matching Rules*, we suggest matching all functions in a compartment with:
 ```
 ALL {resource.type = 'fnfunc', resource.compartment.id = 'ocid1.compartment.oc1..aaaaaxxxxx'}
@@ -83,7 +85,7 @@ cd ServiceLimitCheck
 Example:
 ```
 {
-    "notification_topic_id": "<Topic OCID>",
+    "notification_topic_id": "<ocid1.onstopic.oc1.iad....>",
     "regions": ["us-ashburn-1", "us-phoenix-1"],
     "threshold_percentage": 55
   }
@@ -106,13 +108,6 @@ fn -v deploy --app <app-name>
 
 ## Invoke the function
 
-The function requires the following keys in the payload when invoked:
-- *REQUIRED* - "notification_topic_id", the OCID of Notification Topic to send the summary.
-- *Optional* - "threshold_percentage", the percentage threshold for which resources are nearing their limit. (Default is 90%)
-- *Optional* - "regions", the specific regions to query. (Default is tenancy home region). - NOTE: (If querying a large amount of regions, function may time out due to amount of data being pulled). 
-
-To run the function, you will need to invoke it with at least the notification_topic_id payload. 
-
 ![user input icon](./images/userinput.png)
 ```
 fn invoke <app-name> <function-name> < test.json
@@ -130,7 +125,7 @@ Assuming the other function was invoked correctly, you should see the following 
 Shortly after, the Notification Topic subscribers will recieve a message (email) with the summary of the resources sitting above the usage threshold. 
 
 - *Optional* - You can run the OCI Function from any OCI CLI Authorized device with a Function Invoke Endpoint. Docs: https://docs.oracle.com/en-us/iaas/Content/Functions/Tasks/functionsinvokingfunctions.htm#rawrequestinvoke
+Example:
 ```
-e.g.: 
 oci raw-request --http-method POST --target-uri <invoke-endpoint> --request-body "<request-parameters>"
 ```

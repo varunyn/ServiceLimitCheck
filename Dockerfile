@@ -1,4 +1,4 @@
-FROM fnproject/python:3.11-dev as build-stage
+FROM fnproject/python:3.11-dev AS build-stage
 WORKDIR /function
 ADD requirements.txt /function/
 
