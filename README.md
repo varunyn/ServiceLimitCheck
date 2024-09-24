@@ -33,8 +33,7 @@ Please check the [Accessing Other Oracle Cloud Infrastructure Resources from Run
 
 
 ## Create or Update IAM Policies
-Now that your dynamic group is created, create a new policy that allows the
-dynamic group to use any resources you are interested in receiving
+Now that your dynamic group is created, create a new policy in root compartment that allows the dynamic group to use any resources you are interested in receiving
 information about, in this case we will grant access to `read all-resources` in
 the root compartment.
 
@@ -54,7 +53,6 @@ For more information on how to create policies, check the [documentation](https:
 In order to recieve the summarized service limits of the tenancy, you'll need an OCI Notifications topic & Subscription for the data to be sent to. 
 ![user input icon](./images/userinput.png)
 
-```
 [Create an OCI Topic](https://docs.oracle.com/en-us/iaas/Content/Notification/Tasks/create-topic.htm#top)
 
 Save the OCID of the OCI Topic you just created for use in the function. 
@@ -62,7 +60,7 @@ Save the OCID of the OCI Topic you just created for use in the function.
 [Create an OCI Email Subscription](https://docs.oracle.com/en-us/iaas/Content/Notification/Tasks/create-subscription-email.htm#top)
 
 NOTE - You must confirm the subscription email in your inbox after the subscription is created. 
-```
+
 
 ## Required - Customize the test.json file
 - notification_topic_id: "<Topic OCID>"
