@@ -62,7 +62,7 @@ Save the OCID of the OCI Topic you just created for use in the function.
 
 NOTE - You must confirm the subscription email in your inbox after the subscription is created. 
 
-### Clone the repository into Cloud Shell
+## Clone the repository into Cloud Shell
 You will need to clone the repository in Cloud Shell in order to build and deploy the function. 
 
 ![user input icon](./images/userinput.png)
@@ -70,10 +70,11 @@ You will need to clone the repository in Cloud Shell in order to build and deplo
 Example: 
 ```
 git clone https://github.com/webdev2080/ServiceLimitCheck.git
+cd ServiceLimitCheck
 ```
 
 
-##Customize the test.json file
+## Customize the test.json file
 ![user input icon](./images/userinput.png)
 - Required - notification_topic_id: "<Topic OCID>"
 - Optional - regions (Default is home region)
