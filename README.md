@@ -51,6 +51,7 @@ For more information on how to create policies, check the [documentation](https:
 
 ## Create Notifications Topic 
 In order to recieve the summarized service limits of the tenancy, you'll need an OCI Notifications topic & Subscription for the data to be sent to. 
+
 ![user input icon](./images/userinput.png)
 
 [Create an OCI Topic](https://docs.oracle.com/en-us/iaas/Content/Notification/Tasks/create-topic.htm#top)
@@ -61,9 +62,20 @@ Save the OCID of the OCI Topic you just created for use in the function.
 
 NOTE - You must confirm the subscription email in your inbox after the subscription is created. 
 
+### Clone the repository into Cloud Shell
+You will need to clone the repository in Cloud Shell in order to build and deploy the function. 
 
-## Required - Customize the test.json file
-- notification_topic_id: "<Topic OCID>"
+![user input icon](./images/userinput.png)
+
+Example: 
+```
+git clone https://github.com/webdev2080/ServiceLimitCheck.git
+```
+
+
+##Customize the test.json file
+![user input icon](./images/userinput.png)
+- Required - notification_topic_id: "<Topic OCID>"
 - Optional - regions (Default is home region)
 - Optional - threshold_percentage (Default is 90)
 
