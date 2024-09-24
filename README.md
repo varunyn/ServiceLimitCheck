@@ -80,11 +80,20 @@ cd ServiceLimitCheck
 - Optional - regions (Default is home region)
 - Optional - threshold_percentage (Default is 90)
 
+Example:
+```
+{
+    "notification_topic_id": "<Topic OCID>",
+    "regions": ["us-ashburn-1", "us-phoenix-1"],
+    "threshold_percentage": 55
+  }
+```
+
 ## Optional - Review and customize the function
 Review the following files in the current folder:
-* the code of the function, [func.py](./func.py)
-* its dependencies, [requirements.txt](./requirements.txt)
-* the function metadata, [func.yaml](./func.yaml)
+* Main Function, [func.py](./func.py)
+* Dependencies, [requirements.txt](./requirements.txt)
+* Metadata, [func.yaml](./func.yaml)
 
 ## Deploy the function
 In Cloud Shell, run the *fn deploy* command to build the function and its dependencies as a Docker image, 
