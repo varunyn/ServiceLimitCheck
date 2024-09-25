@@ -1,6 +1,5 @@
 import oci
 import datetime
-import time
 import json
 import logging
 import io
@@ -13,6 +12,7 @@ DEFAULT_THRESHOLD_PERCENTAGE = 90
 # Initialize summary buffer for log entries
 summary_buffer = []
 error_buffer = []
+logged_entries = set()  # Set to track logged entries and avoid duplicates
 
 # Function to log messages to both console and buffer (to be sent via email)
 def log_message(message):
@@ -145,13 +145,17 @@ def get_resource_availability(service_name, limit_name, compartment_id, limits_c
 def log_usage_if_above_threshold(service_name, scope_type, availability_domain, limit_name, service_limit, usage, available, threshold_percentage):
     if service_limit > 0:  # To avoid division by zero
         usage_percentage = (usage / service_limit) * 100
-        if usage_percentage >= threshold_percentage:
+        entry_key = (service_name, scope_type, availability_domain, limit_name)
+        
+        # Avoid duplicate entries by checking if the entry already exists in the set
+        if entry_key not in logged_entries and usage_percentage >= threshold_percentage:
             # Log the resource if usage exceeds the threshold
             log_entry = (f"Service: {service_name}, Scope: {scope_type}, AD: {availability_domain or 'N/A'}, "
                          f"Limit Name: {limit_name}, Limit: {service_limit}, Usage: {usage}, Available: {available}, "
                          f"Usage %: {usage_percentage:.2f}%")
             
             log_message(log_entry)  # Add to the summary buffer
+            logged_entries.add(entry_key)  # Add the entry to the logged entries set
 
 # Function to find the tenancy's home region
 def get_home_region(identity_client, tenancy_id):
@@ -193,8 +197,6 @@ def check_service_limits(signer, notification_topic_id, regions, threshold_perce
 
             # List all services in the compartment (tenancy)
             services = list_all_services(compartment_id, limits_client)
-
-            #log_message(f"Services found in region {region_name}: {len(services)}")
 
             # Get the list of Availability Domains (ADs) for the tenancy
             availability_domains = list_availability_domains(identity_client, compartment_id)
