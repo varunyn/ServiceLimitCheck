@@ -1,6 +1,7 @@
 {
     "notification_topic_id": "",
     "regions": [],
-    "threshold_percentage": 90
+    "threshold_percentage": 90,
+    "policy_limit": 100
   }
   

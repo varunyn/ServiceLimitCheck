@@ -81,13 +81,15 @@ cd ServiceLimitCheck
 - Required - notification_topic_id: "<Topic OCID>"
 - Optional - regions (Default is home region)
 - Optional - threshold_percentage (Default is 90)
+- Optional - policy_limit (Default is 100)
 
 Example:
 ```
 {
     "notification_topic_id": "<ocid1.onstopic.oc1.iad....>",
     "regions": ["us-ashburn-1", "us-phoenix-1"],
-    "threshold_percentage": 55
+    "threshold_percentage": 75,
+    "policy_limit": 100 
   }
 ```
 
@@ -129,3 +131,7 @@ Example:
 ```
 oci raw-request --http-method POST --target-uri <invoke-endpoint> --request-body "<request-parameters>"
 ```
+
+## Updates
+Added policy_limit as a default option and now acquires total policy count within tenancy. 
+NOTE - OCI Tenancy Policy limits are defaulted to a limit of 100. 
