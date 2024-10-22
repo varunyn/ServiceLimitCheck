@@ -3,18 +3,33 @@ import datetime
 import json
 import logging
 import io
+import concurrent.futures
+
 
 from fdk import response
 
 # Set the default usage threshold percentage
 DEFAULT_THRESHOLD_PERCENTAGE = 90
+
 # Set the default policy limit
 DEFAULT_POLICY_LIMIT = 100
+
 
 # Initialize summary buffer for log entries
 summary_buffer = []
 error_buffer = []
 logged_entries = set()  # Set to track logged entries and avoid duplicates
+
+# Set up logger
+logging.basicConfig(
+    filename="app_timeout.log", 
+    level=logging.DEBUG,
+    format="%(asctime)s %(levelname)s : %(message)s"
+)
+
+# Function to log debug messages (for step-by-step tracking)
+def log_debug_message(message):
+    logging.getLogger().debug(message)
 
 # Function to log messages to both console and buffer (to be sent via email)
 def log_message(message):
@@ -30,21 +45,18 @@ def send_notification(notification_topic_id, signer):
     summary_message = "\n".join(summary_buffer)
     error_message = "\n".join(error_buffer)
 
+    # Check if the summary message is empty
     if not summary_message:
         summary_message = "No resources are near their usage limits."
 
-    # Construct the full notification message
     notification_message = f"OCI Resource Usage Report - {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n\n"
     
+    # Append errors to the notification only if there are errors
     if error_message:
         notification_message += f"Errors encountered:\n{error_message}\n\n"
 
+    # Append the resource usage summary
     notification_message += summary_message
-
-    # Truncate the message if it's too large
-    max_message_size = 65536  # 64 KiB
-    if len(notification_message) > max_message_size:
-        notification_message = notification_message[:max_message_size - 1000] + "\n\n[Message Truncated]"
 
     notification_client = oci.ons.NotificationDataPlaneClient({}, signer=signer)
     try:
@@ -55,7 +67,9 @@ def send_notification(notification_topic_id, signer):
                 body=notification_message
             )
         )
+        #log_message(f"Notification sent successfully: {response.data}")
     except oci.exceptions.ServiceError as e:
+        # Log and capture the error in the error log
         error_message = f"Failed to send notification: {str(e)}"
         log_message(error_message)
         add_to_error_log(error_message)
@@ -120,8 +134,9 @@ def get_all_limit_values(service_name, compartment_id, limits_client, limit=1000
             break
     return limit_values
 
-# Function to get resource availability based on scope type
+# Example of adding debug logs to a resource check function
 def get_resource_availability(service_name, limit_name, compartment_id, limits_client, availability_domain=None, scope_type=None):
+    log_debug_message(f"Fetching resource availability for {service_name} - {limit_name} in {availability_domain or 'Region'}")
     try:
         if scope_type == 'AD':
             availability_data = limits_client.get_resource_availability(
@@ -137,9 +152,12 @@ def get_resource_availability(service_name, limit_name, compartment_id, limits_c
                 limit_name=limit_name
             ).data
 
+        log_debug_message(f"Resource availability fetched for {service_name} - {limit_name}")
         return availability_data.used, availability_data.available
     except oci.exceptions.ServiceError as e:
-        log_message(f"Error fetching resource availability: {str(e)}")
+        error_message = f"Error fetching resource availability: {str(e)}"
+        log_message(error_message)
+        log_debug_message(error_message)
         return None, None
 
 # Function to log usage if above threshold into a summary buffer
@@ -148,12 +166,15 @@ def log_usage_if_above_threshold(service_name, scope_type, availability_domain, 
         usage_percentage = (usage / service_limit) * 100
         entry_key = (service_name, scope_type, availability_domain, limit_name)
         
+        # Avoid duplicate entries by checking if the entry already exists in the set
         if entry_key not in logged_entries and usage_percentage >= threshold_percentage:
+            # Log the resource if usage exceeds the threshold
             log_entry = (f"Service: {service_name}, Scope: {scope_type}, AD: {availability_domain or 'N/A'}, "
                          f"Limit Name: {limit_name}, Limit: {service_limit}, Usage: {usage}, Available: {available}, "
                          f"Usage %: {usage_percentage:.2f}%")
-            log_message(log_entry)
-            logged_entries.add(entry_key)
+            
+            log_message(log_entry)  # Add to the summary buffer
+            logged_entries.add(entry_key)  # Add the entry to the logged entries set
 
 # Function to count policies in the tenancy
 def count_policies(identity_client, compartment_id):
@@ -174,6 +195,7 @@ def count_policies(identity_client, compartment_id):
 def check_policy_limits(identity_client, policy_limit, compartment_id):
     policy_count = count_policies(identity_client, compartment_id)
     log_message(f"Total number of policies in the tenancy: {policy_count}")
+    policy_limit = float(policy_limit)
 
     if policy_limit > 0:
         policy_usage = (policy_count / policy_limit) * 100
@@ -190,11 +212,39 @@ def get_home_region(identity_client, tenancy_id):
             return region.region_name
     return None
 
-# Function to check service limits in the specified regions
+def process_service(service, compartment_id, limits_client, threshold_percentage, availability_domains):
+    service_name = service.name
+    limit_definitions = get_all_limit_definitions(service_name, compartment_id, limits_client)
+    limit_values = get_all_limit_values(service_name, compartment_id, limits_client)
+
+    for definition in limit_definitions:
+        if definition.is_deprecated:
+            continue
+
+        limit_name = definition.name
+        scope_type = definition.scope_type
+        service_limit = next((lv.value for lv in limit_values if lv.name == limit_name), None)
+
+        if service_limit is None:
+            continue
+
+        if scope_type == 'AD':
+            for ad in availability_domains:
+                usage, available = get_resource_availability(
+                    service_name, limit_name, compartment_id, limits_client, ad, scope_type='AD'
+                )
+                if usage is not None and available is not None:
+                    log_usage_if_above_threshold(service_name, scope_type, ad, limit_name, service_limit, usage, available, threshold_percentage)
+        else:
+            usage, available = get_resource_availability(
+                service_name, limit_name, compartment_id, limits_client, scope_type=scope_type
+            )
+            if usage is not None and available is not None:
+                log_usage_if_above_threshold(service_name, scope_type, None, limit_name, service_limit, usage, available, threshold_percentage)
+
 def check_service_limits(signer, notification_topic_id, regions, threshold_percentage, policy_limit=None):
     try:
-        identity_client = oci.identity.IdentityClient({}, signer=signer)
-
+        identity_client = oci.identity.IdentityClient({},signer=signer)
         tenancy_id = signer.tenancy_id
         compartment_id = tenancy_id
 
@@ -209,87 +259,63 @@ def check_service_limits(signer, notification_topic_id, regions, threshold_perce
         else:
             region_names = [regions]
 
-        for region_name in region_names:
-            log_message(f"Processing region: {region_name}")
+        with concurrent.futures.ThreadPoolExecutor(max_workers=3) as executor:
+            for region_name in region_names:
+                log_message(f"Processing region: {region_name}")
+                config = {"region": region_name}
+                limits_client = oci.limits.LimitsClient(config,signer=signer)
 
-            config = {"region": region_name}
-            limits_client = oci.limits.LimitsClient(config, signer=signer)
+                services = list_all_services(compartment_id, limits_client)
+                availability_domains = list_availability_domains(identity_client, compartment_id)
 
-            services = list_all_services(compartment_id, limits_client)
-            availability_domains = list_availability_domains(identity_client, compartment_id)
-
-            for service in services:
-                service_name = service.name
-                limit_definitions = get_all_limit_definitions(service_name, compartment_id, limits_client)
-
-                for definition in limit_definitions:
-                    limit_name = definition.name
-                    scope_type = definition.scope_type
-
-                    if definition.is_deprecated:
-                        continue
-
-                    limit_values = get_all_limit_values(service_name, compartment_id, limits_client)
-
-                    for limit_value_obj in limit_values:
-                        if limit_value_obj.name == limit_name:
-                            service_limit = limit_value_obj.value
-
-                            if scope_type == 'AD':
-                                for ad in availability_domains:
-                                    usage, available = get_resource_availability(
-                                        service_name, limit_name, compartment_id, limits_client, ad, scope_type='AD'
-                                    )
-
-                                    if usage is not None and available is not None:
-                                        log_usage_if_above_threshold(service_name, scope_type, ad, limit_name, service_limit, usage, available, threshold_percentage)
-                            else:
-                                usage, available = get_resource_availability(
-                                    service_name, limit_name, compartment_id, limits_client, scope_type=scope_type
-                                )
-
-                                if usage is not None and available is not None:
-                                    log_usage_if_above_threshold(service_name, scope_type, None, limit_name, service_limit, usage, available, threshold_percentage)
+                # Use executor to process services in parallel
+                executor.map(lambda service: process_service(service, compartment_id, limits_client,
+                                                              threshold_percentage,
+                                                              availability_domains), services)
 
         send_notification(notification_topic_id, signer)
-
         return {"message": "Function executed successfully."}
-    
+
     except Exception as ex:
         error_message = f"Function execution failed: {str(ex)}"
         log_message(error_message)
         add_to_error_log(error_message)
         return {"error": error_message}
 
-# Main handler function for OCI Functions
 def handler(ctx, data: io.BytesIO = None):
     try:
-        # Parse the event input (expecting notification_topic_id, regions, policy_limit, and threshold_percentage in the event)
-        event = json.loads(data.getvalue())
-        notification_topic_id = event.get("notification_topic_id")
-        regions = event.get("regions")  # User-specified regions as list or "all"
-        threshold_percentage = event.get("threshold_percentage", DEFAULT_THRESHOLD_PERCENTAGE)  # Default to 90%
-        policy_limit = event.get("policy_limit", DEFAULT_POLICY_LIMIT)  # Policy limit from input
+        log_debug_message("Handler function started")
+        config_params = ctx.Config()
+        notification_topic_id = config_params.get("notification_topic_id")
+        regions_string = config_params.get("regions")
+        policy_limit = config_params.get("policy_limit",DEFAULT_POLICY_LIMIT)
+        
+        if regions_string:
+            regions = json.loads(regions_string)
+        else:
+            regions = []
+
+        log_debug_message(f"Regions: {regions}")
+        threshold_percentage = config_params.get("threshold_percentage", DEFAULT_THRESHOLD_PERCENTAGE)
         
         if not notification_topic_id:
             log_message("Error: Notification topic ID not provided.")
             return response.Response(
-                ctx, response_data=json.dumps({"error": "Notification topic ID not provided"}), 
+                ctx, response_data=json.dumps({"error": "Notification topic ID not provided"}),
                 headers={"Content-Type": "application/json"}
             )
 
-        # Initialize Resource Principal authentication (signer)
         signer = oci.auth.signers.get_resource_principals_signer()
-
-        # If no regions are provided, default to home region
         if not regions:
             identity_client = oci.identity.IdentityClient({}, signer=signer)
-            regions = get_home_region(identity_client, signer.tenancy_id)
-            #log_message(f"Defaulting to home region: {regions}")
+            home_region = get_home_region(identity_client, signer.tenancy_id)
+            regions = [home_region]
+            log_message(f"Defaulting to home region: {regions}")
+        
+        log_debug_message("Starting service limit checks")
+        resp = check_service_limits(signer, notification_topic_id, regions, float(threshold_percentage),policy_limit)
 
-        # Execute service limits and policy check logic
-        resp = check_service_limits(signer, notification_topic_id, regions, threshold_percentage, policy_limit)
-
+        log_debug_message("Service limit checks completed")
         return response.Response(
             ctx, response_data=json.dumps(resp),
             headers={"Content-Type": "application/json"}
@@ -302,4 +328,3 @@ def handler(ctx, data: io.BytesIO = None):
             ctx, response_data=json.dumps({"error": error_message}),
             headers={"Content-Type": "application/json"}
         )
-
